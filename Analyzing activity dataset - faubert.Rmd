@@ -1,0 +1,149 @@
+---
+title: "Coursera Class5 - Activity Monitoring data"
+author: "Florian Aubert"
+date: "25/11/2018"
+output: html_document
+---
+
+## Load relevant libraries
+```{r, results="hide"}
+library(lubridate)
+library(dplyr)
+library(reshape)
+library(ggplot2)
+```
+
+
+## Loading the data
+
+```{r}
+setwd("/Users/florianaubert/Documents/Coursera/Class5 - Reproducible Research")
+data <- read.csv("activity.csv")
+datadf <- as.data.frame(data)
+datadf$date <- ymd(datadf$date)
+str(datadf)
+```
+
+## Question 1: What is mean total number of steps taken per day?
+
+### Prepare dataset
+```{r}
+data_1 <- datadf %>% 
+    select(date, steps) %>% 
+    group_by(date) %>% 
+    summarise(total_steps = sum(steps, na.rm = TRUE)) %>% 
+    ungroup
+```
+
+### Create histogram
+```{r histogram}
+hist(data_1$total_steps,
+     main = "Histogram of total steps per day",
+     xlab = "Total steps per day")
+```
+
+### Compute mean and median steps per day
+```{r}
+mean_steps <- as.integer(round(mean(data_1$total_steps),0))
+median_steps <- as.integer(round(median(data_1$total_steps),0))
+```
+On average, the subject has been doing `r mean_steps` per day. But the median was `r median_steps`.
+
+## Question 2: What is the average daily activity pattern?
+
+### Prepare dataset
+```{r}
+data_2 <- datadf %>% 
+    select(interval, steps) %>% 
+    group_by(interval) %>% 
+    summarise(total_steps = sum(steps, na.rm = TRUE),
+              mean_steps = mean(steps, na.rm = TRUE)) %>% 
+    ungroup
+```
+
+### Create time-serie chart
+```{r plot}
+with(data_2,
+     plot(
+         interval,
+         mean_steps,
+         type = "l",
+         ylab = "Average number of steps (for all days)"))
+```
+```{r}
+highest_int_df <- data_2 %>% 
+    filter(mean_steps == max(mean_steps))
+highest_int <- as.integer(round(highest_int_df$interval),0)
+highest_steps <- as.integer(round(highest_int_df$mean_steps),0)
+```
+On average across all the days in the dataset, interval `r highest_int` contains the maximum number of steps (`r highest_steps`)
+
+## Question 3: Imputing missing values
+
+### Identifying missing values
+```{r}
+na_vector <- as.data.frame(is.na(data$steps))
+colnames(na_vector) <- "is_na"
+na_vector$occurence <- 1
+na_summary <- na_vector %>% 
+    group_by(is_na) %>% 
+    summarise(count_na = sum(occurence)) %>% 
+    ungroup
+na_summary
+```
+
+### Replace missing values with the mean for this interval
+```{r}
+# We know that data_2 has already the mean for each interval, so we will left join the main dataset on data_2 to bring in a new column the average for this interval
+data_new <- data %>%
+    left_join(data_2) %>% 
+    mutate(steps_adj = ifelse(is.na(steps),
+                              mean_steps,
+                              steps)) %>% 
+    select(date, interval, steps_adj)
+# Compute total steps per day
+data_new_1 <- data_new %>%
+    group_by(date) %>% 
+    summarise(total_steps_adj = sum(steps_adj))
+```
+
+
+### Create histogram
+```{r histogram2}
+hist(data_new_1$total_steps_adj,
+     main = paste("Histogram of total steps per day","(adjusted for interval mean when NA)",sep="\n"),
+     xlab = "Total adjusted steps per day")
+```
+
+### Compute mean and median steps per day
+```{r}
+mean_steps_adj <- as.integer(round(mean(data_new_1$total_steps_adj),0))
+median_steps_adj <- as.integer(round(median(data_new_1$total_steps_adj),0))
+```
+Adjusting NA values by replacing them with the average for the respective interval gives a new average of steps per day (`r mean_steps_adj` vs. `r mean_steps`) and a new median of `r median_steps_adj` vs. `r median_steps`.
+
+## Question 4: Are there differences in activity patterns between weekdays and weekends?
+```{r}
+data_new$date <- as.Date(data_new$date)
+data_new$weekdays <- weekdays(data_new$date)
+data_new <- data_new %>% 
+    mutate(weekend = ifelse(weekdays == "Samedi" |
+                                weekdays == "Dimanche",
+                            "weekend",
+                            "weekday"))
+# Melt dataset on the variables weekend and weekday 
+data_new_cast <- cast(data_new, interval ~ weekend, value = "steps_adj", fun = "mean")
+data_new_melt <- melt(data_new_cast,
+                      id.vars = "interval",
+                      measure.vars = c("weekday", "weekend"))
+```
+### Create plot
+```{r plot2}
+g <- ggplot(data_new_melt, aes(interval, value))
+g + geom_line() + facet_grid(weekend~.) + labs(y="Average steps adjusted", title = "Comparing Average Steps per interval \n between weekends and weekdays")
+```
+
+
+
+
+
